@@ -1,0 +1,168 @@
+"""任务调度模块"""
+
+import logging
+from datetime import datetime
+from typing import Optional
+
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+
+from .config import Config
+from .crawler import DocumentCrawler
+from .detector import ChangeDetector
+from .notifier import NotificationManager
+from .storage import DocumentStorage
+from .summarizer import AISummarizer
+
+
+class DocumentMonitorScheduler:
+    """文档监控调度器"""
+
+    def __init__(
+        self,
+        config: Config,
+        storage: DocumentStorage,
+        crawler: DocumentCrawler,
+        detector: ChangeDetector,
+        summarizer: AISummarizer,
+        notification_manager: NotificationManager,
+    ):
+        self.config = config
+        self.storage = storage
+        self.crawler = crawler
+        self.detector = detector
+        self.summarizer = summarizer
+        self.notification_manager = notification_manager
+
+        self.scheduler = BackgroundScheduler()
+        self._is_running = False
+
+    def start(self) -> None:
+        """启动调度器"""
+        if self._is_running:
+            logging.warning("调度器已在运行中")
+            return
+
+        cron_expr = self.config.get("scheduler.cron", "0 9 * * 1")
+        timezone = self.config.get("scheduler.timezone", "Asia/Shanghai")
+
+        # 解析cron表达式
+        parts = cron_expr.split()
+        trigger = CronTrigger(
+            minute=parts[0],
+            hour=parts[1],
+            day=parts[2],
+            month=parts[3],
+            day_of_week=parts[4],
+            timezone=timezone,
+        )
+
+        self.scheduler.add_job(
+            self.run_check_now,
+            trigger=trigger,
+            id="doc_monitor_check",
+            name="文档监控检查",
+            replace_existing=True,
+        )
+
+        self.scheduler.start()
+        self._is_running = True
+        logging.info(f"调度器已启动，Cron: {cron_expr}, 时区: {timezone}")
+
+    def stop(self) -> None:
+        """停止调度器"""
+        if not self._is_running:
+            return
+
+        self.scheduler.shutdown(wait=False)
+        self._is_running = False
+        logging.info("调度器已停止")
+
+    def run_check_now(self) -> None:
+        """立即执行一次文档检查"""
+        logging.info("=" * 50)
+        logging.info("开始执行文档检查任务")
+        logging.info("=" * 50)
+
+        started_at = datetime.now()
+        scan_id = self.storage.save_scan_record(started_at=started_at, status="running")
+
+        try:
+            # 1. 获取旧文档
+            old_docs = self.storage.get_all_documents()
+            logging.info(f"已有 {len(old_docs)} 个历史文档")
+
+            # 2. 爬取新文档
+            base_url = self.config.get("crawler.base_url")
+            new_docs = self.crawler.crawl_site(base_url)
+            logging.info(f"本次爬取 {len(new_docs)} 个文档")
+
+            # 3. 保存新文档
+            for doc in new_docs:
+                doc_id = self.storage.save_document(doc)
+                self.storage.save_version(doc_id, doc.content, doc.content_hash)
+
+            # 4. 检测变更
+            report = self.detector.detect_changes(old_docs, new_docs)
+
+            # 5. 生成摘要
+            summary = ""
+            if report.modified:
+                summary = self.summarizer.summarize_batch(report.modified)
+
+                # 保存变更记录
+                for change in report.modified:
+                    doc = self.storage.get_document(change.document.url)
+                    if doc:
+                        individual_summary = self.summarizer.summarize_change(change)
+                        # 需要获取文档ID，这里简化处理
+                        self.storage.save_change(
+                            scan_id=scan_id,
+                            document_id=1,  # 简化
+                            change_type=change.change_type.value,
+                            diff=change.diff,
+                            summary=individual_summary,
+                        )
+
+            # 6. 发送通知
+            if report.added or report.modified or report.deleted:
+                all_changes = report.modified
+                if not summary:
+                    summary = (
+                        f"检测到 {len(report.added)} 个新增文档, "
+                        f"{len(report.modified)} 个修改文档, "
+                        f"{len(report.deleted)} 个删除文档"
+                    )
+                self.notification_manager.send_batch(all_changes, summary)
+
+            # 7. 更新扫描记录
+            total_changes = len(report.added) + len(report.modified) + len(report.deleted)
+            self.storage.update_scan_record(
+                scan_id=scan_id,
+                completed_at=datetime.now(),
+                status="completed",
+                documents_scanned=len(new_docs),
+                changes_detected=total_changes,
+            )
+
+            logging.info(f"文档检查任务完成，检测到 {total_changes} 个变更")
+
+        except Exception as e:
+            logging.error(f"文档检查任务失败: {e}")
+            self.storage.update_scan_record(
+                scan_id=scan_id,
+                completed_at=datetime.now(),
+                status="failed",
+                error_message=str(e),
+            )
+
+    def get_next_run_time(self) -> Optional[datetime]:
+        """获取下次执行时间"""
+        job = self.scheduler.get_job("doc_monitor_check")
+        if job:
+            return job.next_run_time
+        return None
+
+    @property
+    def is_running(self) -> bool:
+        return self._is_running

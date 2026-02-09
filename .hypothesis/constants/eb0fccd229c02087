@@ -1,0 +1,4 @@
+# file: /Users/ayizibaalimujiang/baidu/personal-code/testab/src/detector.py
+# hypothesis_version: 6.141.1
+
+['# ', '## ', '### ', '#### ', '+', '+++', '+-', '-', '---', 'all rights reserved', 'copyright', 'last updated', '©', '新版本', '旧版本', '最后更新', '版权所有']

@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "aliyun-doc-monitor"
+version = "0.1.0"
+description = "阿里云文档监控助手 - 自动追踪文档更新并生成AI摘要"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.31.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=4.9.0",
+    "apscheduler>=3.10.0",
+    "sqlalchemy>=2.0.0",
+    "fastmcp>=2.0.0",
+    "pyyaml>=6.0.0",
+    "python-dotenv>=1.0.0",
+    "python-dateutil>=2.8.0",
+]
+
+[project.scripts]
+aliyun-doc-monitor = "src.mcp_server:mcp.run"
