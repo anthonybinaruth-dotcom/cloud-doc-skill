@@ -10,7 +10,6 @@ from apscheduler.triggers.cron import CronTrigger
 from .config import Config
 from .crawler import DocumentCrawler
 from .detector import ChangeDetector
-from .notifier import NotificationManager
 from .storage import DocumentStorage
 from .summarizer import AISummarizer
 
@@ -25,14 +24,12 @@ class DocumentMonitorScheduler:
         crawler: DocumentCrawler,
         detector: ChangeDetector,
         summarizer: AISummarizer,
-        notification_manager: NotificationManager,
     ):
         self.config = config
         self.storage = storage
         self.crawler = crawler
         self.detector = detector
         self.summarizer = summarizer
-        self.notification_manager = notification_manager
 
         self.scheduler = BackgroundScheduler()
         self._is_running = False
@@ -92,10 +89,28 @@ class DocumentMonitorScheduler:
             old_docs = self.storage.get_all_documents()
             logging.info(f"已有 {len(old_docs)} 个历史文档")
 
-            # 2. 爬取新文档
-            base_url = self.config.get("crawler.base_url")
-            new_docs = self.crawler.crawl_site(base_url)
-            logging.info(f"本次爬取 {len(new_docs)} 个文档")
+            # 2. 按产品列表爬取文档
+            monitor_products = self.config.get("monitor_products", [])
+            new_docs = []
+
+            if monitor_products:
+                for product_alias in monitor_products:
+                    logging.info(f"正在检查产品: {product_alias}")
+                    try:
+                        product_docs = self.crawler.crawl_product(
+                            product_alias,
+                            max_pages=self.config.get("crawler.max_pages_per_product", 100),
+                        )
+                        new_docs.extend(product_docs)
+                        logging.info(f"产品 {product_alias} 获取 {len(product_docs)} 个文档")
+                    except Exception as e:
+                        logging.error(f"产品 {product_alias} 检查失败: {e}")
+            else:
+                # fallback: 爬取配置的 base_url
+                base_url = self.config.get("crawler.base_url")
+                new_docs = self.crawler.crawl_site(base_url)
+
+            logging.info(f"本次共获取 {len(new_docs)} 个文档")
 
             # 3. 保存新文档
             for doc in new_docs:
@@ -124,18 +139,7 @@ class DocumentMonitorScheduler:
                             summary=individual_summary,
                         )
 
-            # 6. 发送通知
-            if report.added or report.modified or report.deleted:
-                all_changes = report.modified
-                if not summary:
-                    summary = (
-                        f"检测到 {len(report.added)} 个新增文档, "
-                        f"{len(report.modified)} 个修改文档, "
-                        f"{len(report.deleted)} 个删除文档"
-                    )
-                self.notification_manager.send_batch(all_changes, summary)
-
-            # 7. 更新扫描记录
+            # 6. 更新扫描记录
             total_changes = len(report.added) + len(report.modified) + len(report.deleted)
             self.storage.update_scan_record(
                 scan_id=scan_id,

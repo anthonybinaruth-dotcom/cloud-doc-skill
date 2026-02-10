@@ -1,4 +1,0 @@
-# file: /Users/ayizibaalimujiang/baidu/personal-code/testab/src/scheduler.py
-# hypothesis_version: 6.141.1
-
-['0 9 * * 1', '=', 'Asia/Shanghai', 'completed', 'crawler.base_url', 'doc_monitor_check', 'failed', 'running', 'scheduler.cron', 'scheduler.timezone', '开始执行文档检查任务', '文档监控检查', '调度器已停止', '调度器已在运行中']

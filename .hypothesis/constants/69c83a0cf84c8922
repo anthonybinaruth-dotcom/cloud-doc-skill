@@ -1,4 +1,0 @@
-# file: /Users/ayizibaalimujiang/baidu/personal-code/testab/src/utils.py
-# hypothesis_version: 6.141.1
-
-[1.0, 2.0, 1024, '%Y-%m-%d %H:%M:%S', '/', 'B', 'GB', 'INFO', 'KB', 'MB', 'TB', 'http://', 'https://', 'utf-8']

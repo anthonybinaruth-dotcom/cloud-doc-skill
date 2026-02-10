@@ -1,4 +1,0 @@
-# file: /Users/ayizibaalimujiang/baidu/personal-code/testab/src/config.py
-# hypothesis_version: 6.141.1
-
-['.', 'base_url', 'config.yaml', 'crawler', 'database', 'llm', 'logging', 'model', 'notifications', 'provider', 'r', 'scheduler', 'storage', 'type', 'utf-8', '大模型配置缺少 model', '大模型配置缺少 provider', '存储配置缺少 database', '存储配置缺少 type', '爬虫配置缺少 base_url']

@@ -1,4 +1,0 @@
-# file: /Users/ayizibaalimujiang/baidu/personal-code/testab/src/summarizer.py
-# hypothesis_version: 6.141.1
-
-[0.3, 120, 429, 503, 1000, 2000, 3000, '\n\n... (内容已截断)', 'Authorization', 'generated_text', 'inputs', 'max_new_tokens', 'model', 'num_predict', 'options', 'parameters', 'prompt', 'qwen2.5:7b', 'response', 'return_full_text', 'stream', 'temperature', 'utf-8', '本周未检测到文档变更。']

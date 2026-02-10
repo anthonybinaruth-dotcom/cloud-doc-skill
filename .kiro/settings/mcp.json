@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "aliyun-doc-monitor": {
+      "command": "/Users/ayizibaalimujiang/baidu/personal-code/testab/venv/bin/python",
+      "args": ["-m", "src.mcp_server"],
+      "env": {}
+    }
+  }
+}

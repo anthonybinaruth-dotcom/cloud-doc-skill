@@ -1,4 +1,0 @@
-# file: /Users/ayizibaalimujiang/baidu/personal-code/testab/src/notifier.py
-# hypothesis_version: 6.141.1
-
-[500, '%Y%m%d_%H%M%S', './notifications', 'Content-Type', 'application/json', 'change_type', 'changes', 'channel', 'detected_at', 'diff_preview', 'document_title', 'document_url', 'metadata', 'success', 'summary', 'timestamp', 'title', 'total_changes', 'utf-8', 'w']

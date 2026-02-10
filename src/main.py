@@ -9,7 +9,6 @@ from pathlib import Path
 from .config import get_config
 from .crawler import DocumentCrawler
 from .detector import ChangeDetector
-from .notifier import FileNotifier, NotificationManager, WebhookNotifier
 from .scheduler import DocumentMonitorScheduler
 from .storage import DocumentStorage
 from .summarizer import AISummarizer, HuggingFaceAdapter, OllamaAdapter
@@ -48,30 +47,6 @@ def create_llm_adapter(config):
         )
     else:
         raise ValueError(f"不支持的LLM提供商: {provider}")
-
-
-def create_notification_manager(config):
-    """根据配置创建通知管理器"""
-    manager = NotificationManager()
-    notifications_config = config.get("notifications", [])
-
-    for notif_config in notifications_config:
-        if not notif_config.get("enabled", False):
-            continue
-
-        notif_type = notif_config.get("type")
-        if notif_type == "webhook":
-            url = notif_config.get("url", "")
-            if url:
-                manager.add_notifier(WebhookNotifier(
-                    url=url,
-                    retry_count=notif_config.get("retry_count", 3),
-                ))
-        elif notif_type == "file":
-            output_dir = notif_config.get("output_dir", "./notifications")
-            manager.add_notifier(FileNotifier(output_dir=output_dir))
-
-    return manager
 
 
 def main():
@@ -116,8 +91,6 @@ def main():
     llm_adapter = create_llm_adapter(config)
     summarizer = AISummarizer(llm_adapter, max_tokens=config.get("llm.max_tokens", 1000))
 
-    notification_manager = create_notification_manager(config)
-
     # 创建调度器
     scheduler = DocumentMonitorScheduler(
         config=config,
@@ -125,7 +98,6 @@ def main():
         crawler=crawler,
         detector=detector,
         summarizer=summarizer,
-        notification_manager=notification_manager,
     )
 
     if args.check_now:

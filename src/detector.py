@@ -56,8 +56,15 @@ class ChangeDetector:
             old_doc = old_map[url]
             new_doc = new_map[url]
 
-            # 通过哈希快速判断是否变更
-            if old_doc.content_hash != new_doc.content_hash:
+            # 优先通过 lastModifiedTime 判断是否变更
+            has_changed = False
+            if new_doc.last_modified and old_doc.last_modified:
+                has_changed = new_doc.last_modified > old_doc.last_modified
+            else:
+                # fallback: 没有时间戳时用哈希判断
+                has_changed = old_doc.content_hash != new_doc.content_hash
+
+            if has_changed:
                 diff = self.compute_diff(old_doc.content, new_doc.content)
 
                 # 过滤无意义变更

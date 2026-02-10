@@ -82,8 +82,17 @@ class DocumentCrawler:
 
     # ========== JSON API 方法 ==========
 
+    @staticmethod
+    def _normalize_alias(alias: str) -> str:
+        """规范化 alias：小写、确保以 / 开头、去除尾部斜杠"""
+        alias = alias.strip().lower()
+        if not alias.startswith("/"):
+            alias = "/" + alias
+        return alias.rstrip("/")
+
     def fetch_doc_by_alias(self, alias: str) -> Optional[dict]:
         """通过 alias 调用文档详情 API"""
+        alias = self._normalize_alias(alias)
         self._rate_limit()
         params = {
             "alias": alias,
@@ -113,6 +122,7 @@ class DocumentCrawler:
 
     def fetch_menu(self, alias: str) -> Optional[dict]:
         """通过侧边栏 API 获取产品文档目录树"""
+        alias = self._normalize_alias(alias)
         self._rate_limit()
         params = {
             "alias": alias,
@@ -164,11 +174,19 @@ class DocumentCrawler:
         if not title:
             h1 = soup.find("h1")
             title = h1.get_text(strip=True) if h1 else alias.split("/")[-1]
+
+        # 提取阿里云文档的实际更新时间
+        last_modified = None
+        last_modified_ms = data.get("lastModifiedTime")
+        if last_modified_ms:
+            last_modified = datetime.fromtimestamp(last_modified_ms / 1000)
+
         return Document(
             url=url,
             title=title,
             content=text_content,
             content_hash=compute_content_hash(text_content),
+            last_modified=last_modified,
             crawled_at=datetime.now(),
         )
 

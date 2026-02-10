@@ -16,6 +16,44 @@ class ConfigError(Exception):
 class Config:
     """配置管理类"""
     
+    # 内置默认配置，uvx 运行时无需 config.yaml
+    DEFAULT_CONFIG: Dict[str, Any] = {
+        "crawler": {
+            "base_url": "https://help.aliyun.com",
+            "request_delay": 1.0,
+            "max_retries": 3,
+            "timeout": 30,
+            "user_agent": "AliyunDocMonitor/1.0",
+        },
+        "scheduler": {
+            "enabled": False,
+            "cron": "0 9 * * 1",
+            "timezone": "Asia/Shanghai",
+        },
+        "llm": {
+            "provider": "dashscope",
+            "model": "qwen-turbo",
+            "api_key": "${DASHSCOPE_API_KEY}",
+            "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "max_tokens": 1000,
+            "temperature": 0.3,
+        },
+        "notifications": [
+            {"type": "file", "enabled": True, "output_dir": "./notifications"},
+        ],
+        "storage": {
+            "type": "sqlite",
+            "database": "./data/aliyun_docs.db",
+            "keep_versions": 10,
+        },
+        "logging": {
+            "level": "INFO",
+            "file": "./logs/monitor.log",
+            "max_size": "10MB",
+            "backup_count": 5,
+        },
+    }
+
     def __init__(self, config_path: str = "config.yaml"):
         """
         初始化配置管理器
@@ -28,9 +66,13 @@ class Config:
         self.load()
     
     def load(self) -> None:
-        """加载配置文件"""
+        """加载配置文件，不存在时使用内置默认配置"""
         if not Path(self.config_path).exists():
-            raise ConfigError(f"配置文件不存在: {self.config_path}")
+            # 无配置文件时使用默认配置
+            import copy
+            raw_config = copy.deepcopy(self.DEFAULT_CONFIG)
+            self._config = self._replace_env_vars(raw_config)
+            return
         
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:

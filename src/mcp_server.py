@@ -95,6 +95,11 @@ def check_doc_changes(aliases: List[str]) -> str:
     Args:
         aliases: 要检查的文档alias列表，如 ["/ecs/user-guide/what-is-ecs", "/ecs/user-guide/limitations"]
     """
+    return _check_doc_changes_impl(aliases)
+
+
+def _check_doc_changes_impl(aliases: List[str]) -> str:
+    """check_doc_changes 的核心实现"""
     try:
         config = _get_config()
         storage = _get_storage()
@@ -118,8 +123,8 @@ def check_doc_changes(aliases: List[str]) -> str:
 
         if report.added:
             results.append(f"新增 {len(report.added)} 个文档:")
-            for change in report.added:
-                results.append(f"  + {change.document.title} ({change.document.url})")
+            for doc in report.added:
+                results.append(f"  + {doc.title} ({doc.url})")
 
         if report.modified:
             results.append(f"\n修改 {len(report.modified)} 个文档:")
@@ -130,8 +135,8 @@ def check_doc_changes(aliases: List[str]) -> str:
 
         if report.deleted:
             results.append(f"\n删除 {len(report.deleted)} 个文档:")
-            for change in report.deleted:
-                results.append(f"  - {change.document.title}")
+            for doc in report.deleted:
+                results.append(f"  - {doc.title}")
 
         if not results:
             return "未检测到变更"
@@ -159,7 +164,7 @@ def check_product_changes(product_alias: str, max_pages: int = 50) -> str:
         if max_pages and len(aliases) > max_pages:
             aliases = aliases[:max_pages]
 
-        return check_doc_changes(aliases)
+        return _check_doc_changes_impl(aliases)
     except Exception as e:
         return f"检查失败: {e}"
 
@@ -205,6 +210,112 @@ def summarize_doc_diff(title: str, old_content: str, new_content: str) -> str:
 
 
 @mcp.tool()
+def check_recent_updates(product_alias: str, days: int = 7, max_pages: int = 200) -> str:
+    """检查某个产品在最近N天内更新过的文档，对比旧版本内容差异，并用AI总结具体更新了什么。
+
+    Args:
+        product_alias: 产品alias，如 /oss、/ecs、/rds
+        days: 查看最近几天的更新，默认7天
+        max_pages: 最大检查文档数，默认200
+    """
+    try:
+        import difflib
+        from .models import Document, DocumentChange, ChangeType
+        from .utils import compute_content_hash
+
+        crawler = DocumentCrawler(request_delay=0.3)
+        storage = _get_storage()
+        aliases = crawler.discover_product_docs(product_alias)
+
+        if not aliases:
+            return f"未找到产品文档: {product_alias}"
+
+        if max_pages and len(aliases) > max_pages:
+            aliases = aliases[:max_pages]
+
+        cutoff = datetime.now() - timedelta(days=days)
+        updated_docs = []
+
+        # 第一步：按 lastModifiedTime 筛选出最近更新的文档
+        for alias in aliases:
+            try:
+                data = crawler.fetch_doc_by_alias(alias)
+                if data is None:
+                    continue
+                last_modified_ms = data.get("lastModifiedTime")
+                if last_modified_ms:
+                    last_modified = datetime.fromtimestamp(last_modified_ms / 1000)
+                    if last_modified >= cutoff:
+                        doc = crawler.parse_api_response(data, alias)
+                        updated_docs.append({
+                            "doc": doc,
+                            "last_modified": last_modified.strftime("%Y-%m-%d %H:%M"),
+                        })
+            except Exception as e:
+                logging.warning(f"检查文档失败 {alias}: {e}")
+
+        if not updated_docs:
+            return f"最近 {days} 天内没有文档更新"
+
+        # 第二步：对比旧版本，生成 diff 和 AI 摘要
+        results = [f"最近 {days} 天内更新了 {len(updated_docs)} 个文档:\n"]
+        summarizer = _get_summarizer()
+        change_summaries = []
+
+        for item in updated_docs:
+            doc = item["doc"]
+            results.append(f"  - {doc.title} (更新时间: {item['last_modified']})")
+            results.append(f"    链接: {doc.url}")
+
+            # 从数据库获取旧版本
+            old_doc = storage.get_document(doc.url)
+
+            if old_doc and old_doc.content and old_doc.content_hash != doc.content_hash:
+                # 有旧版本且内容不同，生成 diff
+                diff = "\n".join(difflib.unified_diff(
+                    old_doc.content.splitlines(), doc.content.splitlines(),
+                    fromfile="旧版本", tofile="新版本", lineterm=""
+                ))
+                if diff:
+                    change = DocumentChange(
+                        document=doc,
+                        old_content_hash=old_doc.content_hash,
+                        new_content_hash=doc.content_hash,
+                        diff=diff,
+                        change_type=ChangeType.MAJOR,
+                    )
+                    try:
+                        summary = summarizer.summarize_change(change)
+                        results.append(f"    变更摘要: {summary}")
+                        change_summaries.append(f"《{doc.title}》: {summary}")
+                    except Exception as e:
+                        results.append(f"    变更摘要生成失败: {e}")
+            else:
+                results.append(f"    (新文档或无历史版本可对比)")
+
+            # 保存新版本到数据库
+            doc_id = storage.save_document(doc)
+            storage.save_version(doc_id, doc.content, doc.content_hash)
+
+        # 第三步：AI 总结所有变更
+        if change_summaries:
+            try:
+                all_summaries = "\n\n".join(change_summaries)
+                prompt = (
+                    f"以下是阿里云产品最近{days}天内各文档的具体变更摘要，"
+                    f"请综合总结这些更新的重点内容和影响:\n\n{all_summaries}"
+                )
+                overall = summarizer.llm.generate(prompt)
+                results.append(f"\n--- 综合总结 ---\n{overall}")
+            except Exception as e:
+                logging.warning(f"综合总结失败: {e}")
+
+        return "\n".join(results)
+    except Exception as e:
+        return f"检查失败: {e}"
+
+
+@mcp.tool()
 def get_statistics() -> Dict[str, Any]:
     """获取监控统计信息"""
     try:
@@ -222,10 +333,14 @@ def get_statistics() -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-if __name__ == "__main__":
+def main():
+    """入口函数，供 pyproject.toml 的 console_scripts 调用"""
     import sys
-    # 支持 SSE 模式：python -m src.mcp_server --sse
     if "--sse" in sys.argv:
         mcp.run(transport="sse", host="0.0.0.0", port=8080)
     else:
         mcp.run()
+
+
+if __name__ == "__main__":
+    main()
