@@ -11,13 +11,13 @@ from .crawler import DocumentCrawler
 from .detector import ChangeDetector
 from .scheduler import DocumentMonitorScheduler
 from .storage import DocumentStorage
-from .summarizer import AISummarizer, HuggingFaceAdapter, OllamaAdapter
+from .summarizer import AISummarizer, HuggingFaceAdapter, OllamaAdapter, DashScopeAdapter
 from .utils import setup_logging
 
 
 def parse_args():
     """解析命令行参数"""
-    parser = argparse.ArgumentParser(description="阿里云文档监控助手")
+    parser = argparse.ArgumentParser(description="云文档监控助手")
     parser.add_argument(
         "--config", default="config.yaml", help="配置文件路径 (默认: config.yaml)"
     )
@@ -45,6 +45,12 @@ def create_llm_adapter(config):
             model=config.get("llm.model", "qwen2.5:7b"),
             api_base=config.get("llm.api_base", "http://localhost:11434"),
         )
+    elif provider == "dashscope":
+        return DashScopeAdapter(
+            model=config.get("llm.model", "qwen-turbo"),
+            api_key=config.get("llm.api_key", ""),
+            api_base=config.get("llm.api_base", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+        )
     else:
         raise ValueError(f"不支持的LLM提供商: {provider}")
 
@@ -62,7 +68,7 @@ def main():
         log_file=config.get("logging.file"),
     )
 
-    logging.info("阿里云文档监控助手启动中...")
+    logging.info("云文档监控助手启动中...")
 
     # 初始化存储
     db_path = config.get("storage.database", "./data/aliyun_docs.db")
@@ -83,7 +89,7 @@ def main():
         request_delay=config.get("crawler.request_delay", 1.0),
         max_retries=config.get("crawler.max_retries", 3),
         timeout=config.get("crawler.timeout", 30),
-        user_agent=config.get("crawler.user_agent", "AliyunDocMonitor/1.0"),
+        user_agent=config.get("crawler.user_agent", "CloudDocMonitor/1.0"),
     )
 
     detector = ChangeDetector()

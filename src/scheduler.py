@@ -10,6 +10,7 @@ from apscheduler.triggers.cron import CronTrigger
 from .config import Config
 from .crawler import DocumentCrawler
 from .detector import ChangeDetector
+from .notifier import NotificationManager
 from .storage import DocumentStorage
 from .summarizer import AISummarizer
 
@@ -33,6 +34,9 @@ class DocumentMonitorScheduler:
 
         self.scheduler = BackgroundScheduler()
         self._is_running = False
+        
+        # 初始化通知管理器
+        self.notifier = NotificationManager(config.get_all())
 
     def start(self) -> None:
         """启动调度器"""
@@ -90,7 +94,11 @@ class DocumentMonitorScheduler:
             logging.info(f"已有 {len(old_docs)} 个历史文档")
 
             # 2. 按产品列表爬取文档
+            # 支持列表格式或逗号分隔的字符串格式
             monitor_products = self.config.get("monitor_products", [])
+            if isinstance(monitor_products, str):
+                # 从环境变量读取时是逗号分隔的字符串
+                monitor_products = [p.strip() for p in monitor_products.split(",") if p.strip()]
             new_docs = []
 
             if monitor_products:
@@ -112,9 +120,11 @@ class DocumentMonitorScheduler:
 
             logging.info(f"本次共获取 {len(new_docs)} 个文档")
 
-            # 3. 保存新文档
+            # 3. 保存新文档，并建立 URL -> ID 映射
+            url_to_id = {}
             for doc in new_docs:
                 doc_id = self.storage.save_document(doc)
+                url_to_id[doc.url] = doc_id
                 self.storage.save_version(doc_id, doc.content, doc.content_hash)
 
             # 4. 检测变更
@@ -127,13 +137,13 @@ class DocumentMonitorScheduler:
 
                 # 保存变更记录
                 for change in report.modified:
-                    doc = self.storage.get_document(change.document.url)
-                    if doc:
+                    doc_url = change.document.url
+                    doc_id = url_to_id.get(doc_url)
+                    if doc_id:
                         individual_summary = self.summarizer.summarize_change(change)
-                        # 需要获取文档ID，这里简化处理
                         self.storage.save_change(
                             scan_id=scan_id,
-                            document_id=1,  # 简化
+                            document_id=doc_id,
                             change_type=change.change_type.value,
                             diff=change.diff,
                             summary=individual_summary,
@@ -148,6 +158,11 @@ class DocumentMonitorScheduler:
                 documents_scanned=len(new_docs),
                 changes_detected=total_changes,
             )
+
+            # 7. 发送通知
+            if total_changes > 0:
+                notify_results = self.notifier.notify_changes(report, summary)
+                logging.info(f"通知发送结果: {notify_results}")
 
             logging.info(f"文档检查任务完成，检测到 {total_changes} 个变更")
 

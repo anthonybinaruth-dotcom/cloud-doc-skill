@@ -46,7 +46,7 @@ class DocumentCrawler:
         request_delay: float = 1.0,
         max_retries: int = 3,
         timeout: int = 30,
-        user_agent: str = "AliyunDocMonitor/1.0",
+        user_agent: str = "CloudDocMonitor/1.0",
     ):
         self.base_url = base_url
         self.request_delay = request_delay

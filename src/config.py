@@ -7,6 +7,24 @@ from typing import Any, Dict, Optional
 
 import yaml
 
+# 自动加载 .env 文件
+def _load_dotenv():
+    """从项目根目录的 .env 文件加载环境变量"""
+    for search_dir in [Path.cwd(), Path(__file__).parent.parent]:
+        env_file = search_dir / ".env"
+        if env_file.exists():
+            with open(env_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, _, value = line.partition("=")
+                        key, value = key.strip(), value.strip()
+                        if not os.environ.get(key):
+                            os.environ[key] = value
+            break
+
+_load_dotenv()
+
 
 class ConfigError(Exception):
     """配置错误异常"""
@@ -23,18 +41,20 @@ class Config:
             "request_delay": 1.0,
             "max_retries": 3,
             "timeout": 30,
-            "user_agent": "AliyunDocMonitor/1.0",
+            "user_agent": "CloudDocMonitor/1.0",
         },
         "scheduler": {
             "enabled": False,
             "cron": "0 9 * * 1",
             "timezone": "Asia/Shanghai",
         },
+        # 监控产品列表，支持从环境变量 MONITOR_PRODUCTS 读取（逗号分隔）
+        "monitor_products": "${MONITOR_PRODUCTS:/vpc}",
         "llm": {
             "provider": "dashscope",
-            "model": "qwen-turbo",
+            "model": "${LLM_MODEL:qwen-turbo}",
             "api_key": "${DASHSCOPE_API_KEY}",
-            "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "api_base": "${LLM_API_BASE:https://dashscope.aliyuncs.com/compatible-mode/v1}",
             "max_tokens": 1000,
             "temperature": 0.3,
         },
