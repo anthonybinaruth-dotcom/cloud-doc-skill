@@ -3,31 +3,11 @@ requests>=2.31.0
 beautifulsoup4>=4.12.0
 lxml>=4.9.0
 
-# 任务调度
-apscheduler>=3.10.0
-
 # 数据库
 sqlalchemy>=2.0.0
-
-# 大模型集成
-langchain>=0.1.0
-openai>=1.0.0  # 可选
 
 # MCP框架
 fastmcp>=2.0.0
 
-# HTTP API
-fastapi>=0.110.0
-uvicorn>=0.27.0
-
 # 配置管理
 pyyaml>=6.0.0
-python-dotenv>=1.0.0
-
-# 测试
-pytest>=7.4.0
-hypothesis>=6.92.0
-pytest-cov>=4.1.0
-
-# 工具
-python-dateutil>=2.8.0

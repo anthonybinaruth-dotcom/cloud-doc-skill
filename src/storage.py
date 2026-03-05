@@ -67,7 +67,6 @@ class ScanRecordDB(Base):
     
     # 关系
     changes = relationship("ChangeDB", back_populates="scan", cascade="all, delete-orphan")
-    notifications = relationship("NotificationDB", back_populates="scan", cascade="all, delete-orphan")
 
 
 class ChangeDB(Base):
@@ -85,21 +84,6 @@ class ChangeDB(Base):
     # 关系
     scan = relationship("ScanRecordDB", back_populates="changes")
     document = relationship("DocumentDB", back_populates="changes")
-
-
-class NotificationDB(Base):
-    """通知记录表模型"""
-    __tablename__ = 'notifications'
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    scan_id = Column(Integer, ForeignKey('scan_records.id'), nullable=False, index=True)
-    channel = Column(String(50), nullable=False)  # webhook, file, email
-    status = Column(String(50), nullable=False)  # pending, sent, failed
-    sent_at = Column(DateTime, nullable=True)
-    error_message = Column(Text, nullable=True)
-    
-    # 关系
-    scan = relationship("ScanRecordDB", back_populates="notifications")
 
 
 class DocumentStorage:
@@ -243,13 +227,16 @@ class DocumentStorage:
         """
         session = self.get_session()
         try:
-            # 获取当前最大版本号
-            max_version = session.query(DocumentVersionDB.version)\
+            # 读取最新版本，内容未变化时不重复落库
+            latest_version = session.query(DocumentVersionDB)\
                 .filter_by(document_id=doc_id)\
                 .order_by(DocumentVersionDB.version.desc())\
                 .first()
-            
-            next_version = (max_version[0] + 1) if max_version else 1
+
+            if latest_version and latest_version.content_hash == content_hash:
+                return latest_version.id
+
+            next_version = (latest_version.version + 1) if latest_version else 1
             
             # 创建新版本
             version = DocumentVersionDB(
@@ -263,28 +250,7 @@ class DocumentStorage:
             return version.id
         finally:
             session.close()
-    
-    def get_latest_version(self, doc_id: int) -> Optional[str]:
-        """
-        获取最新版本内容
-        
-        Args:
-            doc_id: 文档ID
-        
-        Returns:
-            文档内容，如果不存在则返回None
-        """
-        session = self.get_session()
-        try:
-            version = session.query(DocumentVersionDB)\
-                .filter_by(document_id=doc_id)\
-                .order_by(DocumentVersionDB.version.desc())\
-                .first()
-            
-            return version.content if version else None
-        finally:
-            session.close()
-    
+
     def save_scan_record(self, started_at: datetime, status: str = "running") -> int:
         """
         保存扫描记录
@@ -379,64 +345,5 @@ class DocumentStorage:
             session.add(change)
             session.commit()
             return change.id
-        finally:
-            session.close()
-    
-    def save_notification(
-        self,
-        scan_id: int,
-        channel: str,
-        status: str = "pending"
-    ) -> int:
-        """
-        保存通知记录
-        
-        Args:
-            scan_id: 扫描记录ID
-            channel: 通知渠道
-            status: 状态
-        
-        Returns:
-            通知记录ID
-        """
-        session = self.get_session()
-        try:
-            notification = NotificationDB(
-                scan_id=scan_id,
-                channel=channel,
-                status=status
-            )
-            session.add(notification)
-            session.commit()
-            return notification.id
-        finally:
-            session.close()
-    
-    def update_notification(
-        self,
-        notification_id: int,
-        status: str,
-        sent_at: Optional[datetime] = None,
-        error_message: Optional[str] = None
-    ) -> None:
-        """
-        更新通知记录
-        
-        Args:
-            notification_id: 通知记录ID
-            status: 状态
-            sent_at: 发送时间
-            error_message: 错误消息
-        """
-        session = self.get_session()
-        try:
-            notification = session.query(NotificationDB).filter_by(id=notification_id).first()
-            if notification:
-                notification.status = status
-                if sent_at:
-                    notification.sent_at = sent_at
-                if error_message:
-                    notification.error_message = error_message
-                session.commit()
         finally:
             session.close()

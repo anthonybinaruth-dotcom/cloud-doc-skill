@@ -41,14 +41,7 @@ class Config:
             "request_delay": 1.0,
             "max_retries": 3,
             "timeout": 30,
-            "user_agent": "CloudDocMonitor/1.0",
         },
-        "scheduler": {
-            "enabled": False,
-            "cron": "0 9 * * 1",
-            "timezone": "Asia/Shanghai",
-        },
-        # 监控产品列表，支持从环境变量 MONITOR_PRODUCTS 读取（逗号分隔）
         "monitor_products": "${MONITOR_PRODUCTS:/vpc}",
         "llm": {
             "provider": "dashscope",
@@ -68,9 +61,6 @@ class Config:
         },
         "logging": {
             "level": "INFO",
-            "file": "./logs/monitor.log",
-            "max_size": "10MB",
-            "backup_count": 5,
         },
     }
 
@@ -140,7 +130,7 @@ class Config:
     
     def validate(self) -> None:
         """验证配置的完整性和正确性"""
-        required_sections = ['crawler', 'scheduler', 'llm', 'notifications', 'storage', 'logging']
+        required_sections = ['crawler', 'llm', 'notifications', 'storage']
         
         for section in required_sections:
             if section not in self._config:

@@ -1,17 +1,44 @@
 """文档爬虫模块 - 使用阿里云文档 JSON API"""
 
 import logging
+import random
 import time
 from datetime import datetime
 from typing import List, Optional, Set
-from urllib.parse import quote, urljoin, urlparse
-from urllib.robotparser import RobotFileParser
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
 
 from .models import Document
-from .utils import compute_content_hash, normalize_url, retry, deduplicate_urls
+from .utils import compute_content_hash
+
+# 常见浏览器 User-Agent 池
+_USER_AGENTS = [
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0",
+]
+
+# 模拟浏览器的通用请求头（来自 Chrome 真实请求）
+_BROWSER_HEADERS = {
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "Connection": "keep-alive",
+    "Referer": "https://help.aliyun.com/",
+    "bx-v": "2.5.36",
+    "sec-ch-ua": '"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"macOS"',
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-origin",
+}
 
 # 阿里云文档 JSON API
 ALIYUN_DOC_API = "https://help.aliyun.com/help/json/document_detail.json"
@@ -46,38 +73,26 @@ class DocumentCrawler:
         request_delay: float = 1.0,
         max_retries: int = 3,
         timeout: int = 30,
-        user_agent: str = "CloudDocMonitor/1.0",
+        user_agent: str = "",
     ):
         self.base_url = base_url
         self.request_delay = request_delay
         self.max_retries = max_retries
         self.timeout = timeout
-        self.user_agent = user_agent
+        self.user_agent = user_agent or random.choice(_USER_AGENTS)
         self.visited_urls: Set[str] = set()
-        self.robot_parser = RobotFileParser()
-        self._init_robots_parser()
         self.session = requests.Session()
-        self.session.headers.update({"User-Agent": self.user_agent})
+        self.session.headers.update({**_BROWSER_HEADERS, "User-Agent": self.user_agent})
         self.last_request_time = 0.0
-
-    def _init_robots_parser(self) -> None:
-        try:
-            robots_url = urljoin(self.base_url, "/robots.txt")
-            self.robot_parser.set_url(robots_url)
-            self.robot_parser.read()
-        except Exception as e:
-            logging.warning(f"无法加载 robots.txt: {e}")
-
-    def _can_fetch(self, url: str) -> bool:
-        try:
-            return self.robot_parser.can_fetch(self.user_agent, url)
-        except Exception:
-            return True
+        self._consecutive_failures = 0  # 连续失败计数
 
     def _rate_limit(self) -> None:
         elapsed = time.time() - self.last_request_time
-        if elapsed < self.request_delay:
-            time.sleep(self.request_delay - elapsed)
+        # 在基础间隔上增加随机抖动，避免固定节奏
+        jitter = random.uniform(0.2, 0.8)
+        delay = self.request_delay + jitter
+        if elapsed < delay:
+            time.sleep(delay - elapsed)
         self.last_request_time = time.time()
 
     # ========== JSON API 方法 ==========
@@ -93,7 +108,6 @@ class DocumentCrawler:
     def fetch_doc_by_alias(self, alias: str) -> Optional[dict]:
         """通过 alias 调用文档详情 API"""
         alias = self._normalize_alias(alias)
-        self._rate_limit()
         params = {
             "alias": alias,
             "pageNum": 1,
@@ -104,11 +118,28 @@ class DocumentCrawler:
         }
         last_error = None
         for attempt in range(1, self.max_retries + 1):
+            self._rate_limit()
             try:
                 resp = self.session.get(ALIYUN_DOC_API, params=params, timeout=self.timeout)
                 resp.raise_for_status()
+                # 检查 Content-Type，防止反爬页面返回 HTML 被当作 JSON 解析
+                content_type = resp.headers.get("Content-Type", "")
+                if "application/json" not in content_type:
+                    logging.warning(
+                        f"API 返回非 JSON 响应 (Content-Type: {content_type}), "
+                        f"可能触发了反爬机制, alias={alias}"
+                    )
+                    if attempt < self.max_retries:
+                        # 指数退避 + 换 UA
+                        wait = min(10 * (2 ** (attempt - 1)), 120)
+                        self.session.headers["User-Agent"] = random.choice(_USER_AGENTS)
+                        logging.info(f"触发风控，等待 {wait}s 后重试，已更换 UA")
+                        time.sleep(wait)
+                        continue
+                    return None
                 result = resp.json()
                 if result.get("code") == 200 and result.get("data"):
+                    self._consecutive_failures = 0
                     return result["data"]
                 logging.warning(f"API 返回异常: code={result.get('code')}, alias={alias}")
                 return None
@@ -116,7 +147,8 @@ class DocumentCrawler:
                 last_error = e
                 logging.error(f"文档 API 失败 (尝试 {attempt}/{self.max_retries}): {e}")
                 if attempt < self.max_retries:
-                    time.sleep(2 * attempt)
+                    time.sleep(3 * (2 ** (attempt - 1)))
+        self._consecutive_failures += 1
         logging.error(f"文档 API 最终失败: alias={alias}, error={last_error}")
         return None
 
@@ -133,6 +165,10 @@ class DocumentCrawler:
         try:
             resp = self.session.get(ALIYUN_MENU_API, params=params, timeout=self.timeout)
             resp.raise_for_status()
+            content_type = resp.headers.get("Content-Type", "")
+            if "application/json" not in content_type:
+                logging.warning(f"侧边栏 API 返回非 JSON 响应, 可能触发了反爬机制")
+                return None
             result = resp.json()
             if result.get("code") == 200 and result.get("data"):
                 return result["data"]
@@ -213,6 +249,12 @@ class DocumentCrawler:
         for alias in aliases:
             if max_pages and len(documents) >= max_pages:
                 break
+            # 连续失败超过 5 次，判定被风控，暂停后继续
+            if self._consecutive_failures >= 5:
+                logging.warning("连续失败 5 次，疑似触发风控，暂停 60s 后继续")
+                time.sleep(60)
+                self.session.headers["User-Agent"] = random.choice(_USER_AGENTS)
+                self._consecutive_failures = 0
             try:
                 doc = self.crawl_page(alias)
                 documents.append(doc)
@@ -228,59 +270,3 @@ class DocumentCrawler:
         if not aliases:
             return []
         return self.crawl_aliases(aliases, max_pages=max_pages)
-
-    # ========== 兼容旧接口 ==========
-
-    @retry(max_attempts=3, delay=1.0, backoff=2.0)
-    def _fetch_page(self, url: str) -> str:
-        self._rate_limit()
-        response = self.session.get(url, timeout=self.timeout)
-        response.raise_for_status()
-        response.encoding = response.apparent_encoding or "utf-8"
-        return response.text
-
-    def parse_document(self, html: str, url: str) -> Document:
-        soup = BeautifulSoup(html, "lxml")
-        title = ""
-        tag = soup.find("title")
-        if tag:
-            title = tag.get_text().strip()
-        if not title:
-            h1 = soup.find("h1")
-            if h1:
-                title = h1.get_text().strip()
-        content = ""
-        for sel in ["article", ".content", "main", ".markdown-body", "body"]:
-            el = soup.select_one(sel)
-            if el:
-                content = el.get_text(separator="\n", strip=True)
-                break
-        return Document(
-            url=url, title=title, content=content,
-            content_hash=compute_content_hash(content),
-            crawled_at=datetime.now(),
-        )
-
-    def extract_links(self, html: str, base_url: str) -> List[str]:
-        soup = BeautifulSoup(html, "lxml")
-        links = []
-        for a in soup.find_all("a", href=True):
-            abs_url = urljoin(base_url, a["href"])
-            norm = normalize_url(abs_url, base_url)
-            if urlparse(norm).netloc == urlparse(base_url).netloc:
-                links.append(norm)
-        return deduplicate_urls(links)
-
-    def crawl_site(self, base_url: str, max_pages: int = None) -> List[Document]:
-        documents = []
-        urls_to_visit = [normalize_url(base_url, self.base_url)]
-        while urls_to_visit and (max_pages is None or len(documents) < max_pages):
-            url = urls_to_visit.pop(0)
-            if url in self.visited_urls:
-                continue
-            try:
-                doc = self.crawl_page(url)
-                documents.append(doc)
-            except Exception as e:
-                logging.error(f"爬取失败 {url}: {e}")
-        return documents

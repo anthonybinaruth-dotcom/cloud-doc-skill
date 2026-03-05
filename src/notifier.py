@@ -82,51 +82,74 @@ class AiflowNotifier(NotifierBase):
         webhook_url: str,
         retry_count: int = 3,
         timeout: int = 30,
+        notify_users: List[str] = None,
     ):
         self.webhook_url = webhook_url
         self.retry_count = retry_count
         self.timeout = timeout
+        # 支持配置多个通知用户，默认为 alimujiangayiziba
+        self.notify_users = notify_users or ["alimujiangayiziba"]
+
+    def _build_message_text(self, notification: Notification) -> str:
+        """构建如流消息文本"""
+        lines = [
+            f"📢 {notification.title}",
+            f"",
+            f"📝 {notification.summary}",
+            f"",
+        ]
+        
+        if notification.changes:
+            lines.append("📋 变更详情:")
+            for i, change in enumerate(notification.changes[:5], 1):
+                doc = change.document
+                lines.append(f"  {i}. [{doc.title}]({doc.url})")
+            
+            if len(notification.changes) > 5:
+                lines.append(f"  ... 还有 {len(notification.changes) - 5} 条变更")
+        
+        if notification.metadata:
+            meta = notification.metadata
+            lines.append(f"")
+            lines.append(f"📊 统计: 新增 {meta.get('added_count', 0)}, 修改 {meta.get('modified_count', 0)}, 删除 {meta.get('deleted_count', 0)}")
+        
+        return "\n".join(lines)
 
     def send(self, notification: Notification) -> bool:
         if not self.webhook_url:
             logging.warning("aiflow Webhook URL 未配置，跳过发送")
             return False
 
-        # aiflow 直接发送结构化 JSON，便于后续工作流处理
-        payload = {
-            "event": "doc_change_notification",
-            "user": "alimujiangayiziba",
-            "title": notification.title,
-            "summary": notification.summary,
-            "timestamp": notification.timestamp.isoformat(),
-            "metadata": notification.metadata,
-            "changes": [
-                {
-                    "doc_title": change.document.title,
-                    "doc_url": change.document.url,
-                    "change_type": change.change_type.value,
-                }
-                for change in notification.changes[:20]
-            ],
-        }
-
+        # 构建如流消息文本
+        text = self._build_message_text(notification)
+        
+        # 使用 POST 请求 + form-data 格式发送（如流消息节点要求）
         for attempt in range(1, self.retry_count + 1):
-            try:
-                response = requests.post(
-                    self.webhook_url,
-                    json=payload,
-                    timeout=self.timeout,
-                    headers={"Content-Type": "application/json"},
-                )
-                response.raise_for_status()
-                logging.info("aiflow Webhook 通知发送成功")
+            all_success = True
+            for user in self.notify_users:
+                try:
+                    # POST form-data 参数
+                    form_data = {
+                        "user": user,
+                        "text": text,
+                    }
+                    response = requests.post(
+                        self.webhook_url,
+                        data=form_data,
+                        timeout=self.timeout,
+                    )
+                    response.raise_for_status()
+                    logging.info(f"aiflow 通知发送成功: {user}")
+                except Exception as e:
+                    logging.error(f"aiflow 发送给 {user} 失败 (尝试 {attempt}/{self.retry_count}): {e}")
+                    all_success = False
+            
+            if all_success:
                 return True
-
-            except Exception as e:
-                logging.error(f"aiflow 发送失败 (尝试 {attempt}/{self.retry_count}): {e}")
-                if attempt < self.retry_count:
-                    import time
-                    time.sleep(2 * attempt)
+            
+            if attempt < self.retry_count:
+                import time
+                time.sleep(2 * attempt)
 
         return False
 
@@ -339,6 +362,7 @@ class NotificationManager:
                 self.notifiers.append(AiflowNotifier(
                     webhook_url=notifier_config.get("webhook_url", ""),
                     retry_count=notifier_config.get("retry_count", 3),
+                    notify_users=notifier_config.get("notify_users", []),
                 ))
             elif notifier_type == "ruliu":
                 self.notifiers.append(RuliuNotifier(
@@ -386,12 +410,14 @@ class NotificationManager:
         """
         total_changes = len(report.added) + len(report.modified) + len(report.deleted)
 
+        # 即使无变更也发送通知
         if total_changes == 0:
-            logging.info("无变更，跳过通知发送")
-            return {}
+            title = "云文档监控报告 - 定时检查完成"
+        else:
+            title = f"云文档监控报告 - 检测到 {total_changes} 个变更"
 
         notification = Notification(
-            title=f"云文档监控报告 - 检测到 {total_changes} 个变更",
+            title=title,
             summary=summary,
             changes=report.modified,
             timestamp=report.timestamp,

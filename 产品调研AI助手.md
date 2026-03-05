@@ -1,9 +1,6 @@
 # 产品调研AI助手
 
 > 来源：[如流知识库](https://ku.baidu-int.com/knowledge/HFVrC7hq1Q/pKzJfZczuc/1eENucmqrf/Ww5CuZtAAyWkk5)
-> 作者：李竟多
-> 最近更新：2-11
-
 ---
 
 ## 一、项目背景
@@ -70,10 +67,3 @@ AI 总结变化内容
 ```
 
 ---
-
-## 附录
-
-### 相关文档
-
-- [阿里云企业网Qos功能测试报告](https://ku.baidu-int.com/knowledge/HFVrC7hq1Q/pKzJfZczuc/1eENucmqrf/RRTr8KrGTpVkrU)
-- [网络相关字典](https://ku.baidu-int.com/knowledge/HFVrC7hq1Q/pKzJfZczuc/1eENucmqrf/PqcO9sJg3Ye1Hk)
