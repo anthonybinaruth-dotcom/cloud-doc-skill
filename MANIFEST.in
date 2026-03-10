@@ -1,0 +1,3 @@
+include config.yaml
+include SKILL.md
+include requirements.txt

@@ -1,13 +1,6 @@
-# Web爬虫
 requests>=2.31.0
 beautifulsoup4>=4.12.0
 lxml>=4.9.0
-
-# 数据库
 sqlalchemy>=2.0.0
-
-# MCP框架
-fastmcp>=2.0.0
-
-# 配置管理
 pyyaml>=6.0.0
+click>=8.1.0
