@@ -124,11 +124,18 @@ class CheckChangesSkill:
                              keyword: Optional[str], max_pages: int) -> List[Document]:
         docs = []
         if cloud == "aliyun":
-            aliases = crawler.discover_product_docs(product)[:max_pages]
+            aliases = crawler.discover_product_docs(product)
             for alias in aliases:
                 try:
                     doc = crawler.crawl_page(alias)
+                    # 如果指定了关键词，进行过滤
+                    if keyword and keyword.strip():
+                        if keyword.lower() not in doc.title.lower() and keyword.lower() not in doc.content.lower():
+                            continue
                     docs.append(doc)
+                    # 达到最大数量后停止
+                    if len(docs) >= max_pages:
+                        break
                 except Exception as e:
                     logging.warning(f"跳过 {alias}: {e}")
         elif cloud == "tencent":

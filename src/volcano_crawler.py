@@ -316,6 +316,16 @@ class VolcanoDocCrawler:
             return None
 
     def _extract_text_from_content(self, content_json: str) -> str:
+        """从 Content 字段提取文本
+        
+        Content 字段可能是：
+        1. JSON 格式的富文本（私有网络等产品）
+        2. 纯 HTML/Markdown 文本（边缘计算节点等产品）
+        """
+        if not content_json:
+            return ""
+            
+        # 尝试作为 JSON 解析
         try:
             data = json.loads(content_json)
             texts = []
@@ -327,7 +337,11 @@ class VolcanoDocCrawler:
                         insert = op.get("insert", "")
                         if isinstance(insert, str) and insert and insert != "*":
                             texts.append(insert)
-            return "".join(texts)
-        except Exception as e:
-            logging.debug(f"解析富文本失败: {e}")
-            return ""
+            result = "".join(texts)
+            if result:
+                return result
+        except (json.JSONDecodeError, Exception) as e:
+            logging.debug(f"Content 不是 JSON 格式，尝试作为纯文本处理: {e}")
+        
+        # 如果不是 JSON 或解析失败，直接返回原文本（可能是 HTML/Markdown）
+        return content_json.strip()

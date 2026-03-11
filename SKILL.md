@@ -1,6 +1,6 @@
 ---
 name: cloud-doc-intelligent-assistant
-version: 0.3.0
+version: 0.4.0
 description: 智能文档助手技能库，支持抓取阿里云、腾讯云、百度云、火山引擎的产品文档，进行变更检测、跨云对比分析、AI 摘要生成和定时巡检推送。当用户提到抓取云厂商文档、检查文档更新、对比不同云的产品、生成变更报告或运行文档巡检时，应触发此 skill。
 author: anthonybinaruth-dotcom
 license: MIT
@@ -80,13 +80,13 @@ permissions:
   filesystem:
     read:
       - config.yaml
-      - .env
     write:
       - data/*.db
       - logs/*.log
       - notifications/*.md
     description: |
-      读取配置文件（config.yaml）和环境变量文件（.env，如果存在）。
+      读取配置文件（config.yaml）。
+      .env 文件默认不读取，需设置 CLOUD_DOC_MONITOR_LOAD_DOTENV=1 才会加载。
       写入 SQLite 数据库（data/）、日志文件（logs/）和通知文件（notifications/）。
   environment:
     read:
@@ -96,9 +96,10 @@ permissions:
       - DASHSCOPE_API_KEY
       - AIFLOW_WEBHOOK_URL
       - RULIU_WEBHOOK_URL
+      - CLOUD_DOC_MONITOR_LOAD_DOTENV
     description: |
       读取环境变量用于 LLM API 认证和 webhook 配置。
-      如果项目根目录存在 .env 文件，会自动加载其中的环境变量。
+      .env 文件默认不加载，需设置 CLOUD_DOC_MONITOR_LOAD_DOTENV=1 显式启用。
 security_notice: |
   ⚠️ 隐私和安全提示：
   
@@ -108,7 +109,7 @@ security_notice: |
   
   3. 本地存储：文档内容和历史版本会存储在本地 SQLite 数据库（data/docs.db）中。
   
-  4. 环境变量：会自动读取项目根目录的 .env 文件（如果存在）来加载环境变量。
+  4. 环境变量：.env 文件默认不加载。如需从 .env 加载，请设置 CLOUD_DOC_MONITOR_LOAD_DOTENV=1。推荐直接通过环境变量传递配置。
   
   5. API Key 安全：请确保您的 LLM_API_KEY 和 webhook URL 安全，避免泄露。建议使用环境变量而非硬编码在配置文件中。
   

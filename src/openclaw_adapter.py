@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
+from .async_skills import AsyncDocAssistant
 from .skills import DocAssistant
 from .skills.runtime import SkillRuntime
 
@@ -88,6 +89,20 @@ SKILL_SPECS = [
         "network": ["https://help.aliyun.com/*", "https://cloud.tencent.com/*", "https://cloud.baidu.com/*", "https://www.volcengine.com/*"],
     },
     {
+        "name": "fetch_doc_async",
+        "description": "【异步】抓取文档，立即返回 task_id，避免超时。适合大量文档抓取",
+        "method": "fetch_doc_async",
+        "parameters": {
+            "cloud": {"type": "string", "required": True, "enum": ["aliyun", "tencent", "baidu", "volcano"], "description": "云厂商标识"},
+            "product": {"type": "string", "required": False, "description": "产品名称"},
+            "doc_ref": {"type": "string", "required": False, "description": "文档标识"},
+            "with_summary": {"type": "boolean", "required": False, "default": False, "description": "是否生成 AI 摘要"},
+            "max_pages": {"type": "integer", "required": False, "default": 20, "description": "最多抓取篇数"},
+        },
+        "environment": ["LLM_API_KEY"],
+        "network": ["https://help.aliyun.com/*", "https://cloud.tencent.com/*", "https://cloud.baidu.com/*", "https://www.volcengine.com/*"],
+    },
+    {
         "name": "check_changes",
         "description": "检测指定云厂商产品文档的变更，与历史版本对比，生成变更摘要",
         "method": "check_changes",
@@ -112,6 +127,40 @@ SKILL_SPECS = [
         },
         "environment": ["LLM_API_KEY"],
         "network": ["https://help.aliyun.com/*", "https://cloud.tencent.com/*", "https://cloud.baidu.com/*", "https://www.volcengine.com/*"],
+    },
+    {
+        "name": "compare_docs_async",
+        "description": "【异步】对比文档，立即返回 task_id，避免超时",
+        "method": "compare_docs_async",
+        "parameters": {
+            "left": {"type": "object", "required": True, "description": "左侧文档"},
+            "right": {"type": "object", "required": True, "description": "右侧文档"},
+            "focus": {"type": "string", "required": False, "description": "对比关注点"},
+        },
+        "environment": ["LLM_API_KEY"],
+        "network": ["https://help.aliyun.com/*", "https://cloud.tencent.com/*", "https://cloud.baidu.com/*", "https://www.volcengine.com/*"],
+    },
+    {
+        "name": "get_task_status",
+        "description": "查询异步任务的状态和进度",
+        "method": "get_task_status",
+        "parameters": {
+            "task_id": {"type": "string", "required": True, "description": "任务 ID"},
+        },
+        "environment": [],
+        "network": [],
+    },
+    {
+        "name": "get_task_result",
+        "description": "获取异步任务的结果",
+        "method": "get_task_result",
+        "parameters": {
+            "task_id": {"type": "string", "required": True, "description": "任务 ID"},
+            "wait": {"type": "boolean", "required": False, "default": False, "description": "是否等待任务完成"},
+            "timeout": {"type": "number", "required": False, "default": 300, "description": "等待超时时间（秒）"},
+        },
+        "environment": [],
+        "network": [],
     },
     {
         "name": "summarize_diff",
@@ -163,12 +212,22 @@ class OpenClawAdapter:
         llm_api_key: str = "",
         llm_api_base: str = "",
         llm_model: str = "",
+        use_async: bool = True,  # 默认使用异步版本
     ) -> None:
-        self.assistant = assistant or DocAssistant(
-            llm_api_key=llm_api_key,
-            llm_api_base=llm_api_base,
-            llm_model=llm_model,
-        )
+        if use_async:
+            # 使用异步版本，支持长时间运行的任务
+            self.assistant = AsyncDocAssistant(
+                llm_api_key=llm_api_key,
+                llm_api_base=llm_api_base,
+                llm_model=llm_model,
+            )
+        else:
+            # 使用同步版本（兼容旧代码）
+            self.assistant = assistant or DocAssistant(
+                llm_api_key=llm_api_key,
+                llm_api_base=llm_api_base,
+                llm_model=llm_model,
+            )
 
     @staticmethod
     def package_metadata() -> dict:

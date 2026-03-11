@@ -1,6 +1,7 @@
 """fetch_doc skill - 抓取指定云厂商的产品文档"""
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -97,14 +98,36 @@ class FetchDocSkill:
                        max_pages: int, with_summary: bool) -> Dict[str, Any]:
         try:
             if cloud == "aliyun":
-                aliases = crawler.discover_product_docs(product)[:max_pages]
+                aliases = crawler.discover_product_docs(product)
                 items = []
-                for alias in aliases:
+                
+                # 并发抓取文档
+                def fetch_single_doc(alias):
                     try:
                         doc = crawler.crawl_page(alias)
-                        items.append(self._doc_to_item(doc, with_summary))
+                        # 如果指定了关键词，进行过滤
+                        if keyword and keyword.strip():
+                            if keyword.lower() not in doc.title.lower() and keyword.lower() not in doc.content.lower():
+                                return None
+                        return self._doc_to_item(doc, with_summary)
                     except Exception as e:
                         logging.warning(f"跳过文档 {alias}: {e}")
+                        return None
+                
+                # 限制并发数量，避免过载
+                max_workers = min(10, len(aliases))
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    # 只提交 max_pages 数量的任务
+                    aliases_to_fetch = aliases[:max_pages]
+                    future_to_alias = {executor.submit(fetch_single_doc, alias): alias for alias in aliases_to_fetch}
+                    
+                    for future in as_completed(future_to_alias):
+                        result = future.result()
+                        if result:
+                            items.append(result)
+                            # 达到最大数量后停止
+                            if len(items) >= max_pages:
+                                break
             elif cloud == "tencent":
                 raw_list = crawler.discover_product_docs(product, keyword=keyword or "", limit=max_pages)
                 items = []

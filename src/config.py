@@ -7,9 +7,13 @@ from typing import Any, Dict, Optional
 
 import yaml
 
-# 自动加载 .env 文件
+# .env 加载（默认禁用，需显式 opt-in）
 def _load_dotenv():
-    """从项目根目录的 .env 文件加载环境变量"""
+    """从项目根目录的 .env 文件加载环境变量（默认不加载，需设置 CLOUD_DOC_MONITOR_LOAD_DOTENV=1 启用）"""
+    # 默认不加载，必须显式启用
+    if os.environ.get("CLOUD_DOC_MONITOR_LOAD_DOTENV", "").lower() not in ("1", "true", "yes"):
+        return
+    
     for search_dir in [Path.cwd(), Path(__file__).parent.parent]:
         env_file = search_dir / ".env"
         if env_file.exists():

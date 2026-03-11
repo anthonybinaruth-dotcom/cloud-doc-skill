@@ -3,7 +3,7 @@
 import difflib
 import logging
 from datetime import datetime
-from typing import Dict, List, Set
+from typing import Dict, List, Optional, Set
 
 from .models import ChangeReport, ChangeType, Document, DocumentChange
 
@@ -67,7 +67,7 @@ class ChangeDetector:
             return ChangeType.MAJOR
         return ChangeType.MINOR
 
-    def detect(self, old_doc: Document, new_doc: Document) -> "DocumentChange | None":
+    def detect(self, old_doc: Document, new_doc: Document) -> "Optional[DocumentChange]":
         """对比两个单篇文档，返回 DocumentChange 或 None（无变更）"""
         if old_doc.content_hash == new_doc.content_hash:
             return None

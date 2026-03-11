@@ -99,14 +99,15 @@ class CompareDocsSkill:
         """抓取一侧文档内容，优先从缓存读取"""
         product = side.get("product", "")
         doc_ref = side.get("doc_ref", "")
+        keyword = side.get("keyword", "")
         crawler = self._rt.get_crawler(cloud)
 
         # 优先用 doc_ref 直接抓取
         if doc_ref:
             return self._fetch_by_ref(cloud, crawler, doc_ref)
 
-        # 用 product 搜索，取第一篇
-        return self._fetch_by_product(cloud, crawler, product)
+        # 用 product 搜索，支持 keyword 过滤
+        return self._fetch_by_product(cloud, crawler, product, keyword)
 
     def _fetch_by_ref(self, cloud: str, crawler, doc_ref: str) -> tuple:
         if cloud == "aliyun":
@@ -126,29 +127,72 @@ class CompareDocsSkill:
             return (raw or {}).get("text", ""), (raw or {}).get("title", "")
         return "", ""
 
-    def _fetch_by_product(self, cloud: str, crawler, product: str) -> tuple:
+    def _fetch_by_product(self, cloud: str, crawler, product: str, keyword: str = "") -> tuple:
+        """按产品名搜索文档，支持关键词过滤
+        
+        Args:
+            cloud: 云厂商
+            crawler: 爬虫实例
+            product: 产品名称
+            keyword: 搜索关键词（可选，用于精确过滤）
+        """
         if cloud == "aliyun":
             aliases = crawler.discover_product_docs(product)
             if not aliases:
                 return "", ""
+            # 如果有关键词，优先选择标题包含关键词的文档
+            if keyword:
+                for alias in aliases:
+                    try:
+                        doc = crawler.crawl_page(alias)
+                        if keyword.lower() in doc.title.lower():
+                            return doc.content, doc.title
+                    except Exception:
+                        continue
+            # 没有关键词或没找到匹配的，返回第一篇
             doc = crawler.crawl_page(aliases[0])
             return doc.content, doc.title
         elif cloud == "tencent":
-            raw_list = crawler.discover_product_docs(product, limit=1)
+            # 腾讯云支持 keyword 参数
+            raw_list = crawler.discover_product_docs(product, keyword=keyword, limit=10)
             if not raw_list:
                 return "", ""
+            # 如果有关键词，优先选择标题包含关键词的文档
+            if keyword:
+                for item in raw_list:
+                    if keyword.lower() in item.get("title", "").lower():
+                        raw = crawler.fetch_doc(item["doc_id"], item.get("product_id", ""))
+                        if raw:
+                            return raw.get("text", ""), raw.get("title", "")
+            # 没有关键词或没找到匹配的，返回第一篇
             raw = crawler.fetch_doc(raw_list[0]["doc_id"], raw_list[0].get("product_id", ""))
             return (raw or {}).get("text", ""), (raw or {}).get("title", "")
         elif cloud == "baidu":
-            raw_list = crawler.discover_product_docs(product, limit=1)
+            raw_list = crawler.discover_product_docs(product, limit=10)
             if not raw_list:
                 return "", ""
+            # 如果有关键词，优先选择标题包含关键词的文档
+            if keyword:
+                for item in raw_list:
+                    if keyword.lower() in item.get("name", "").lower():
+                        raw = crawler.fetch_doc(item["product"], item["slug"])
+                        if raw:
+                            return raw.get("text", ""), raw.get("title", "")
+            # 没有关键词或没找到匹配的，返回第一篇
             raw = crawler.fetch_doc(raw_list[0]["product"], raw_list[0]["slug"])
             return (raw or {}).get("text", ""), (raw or {}).get("title", "")
         elif cloud == "volcano":
-            raw_list = crawler.discover_product_docs(product, limit=1)
+            raw_list = crawler.discover_product_docs(product, limit=10)
             if not raw_list:
                 return "", ""
+            # 如果有关键词，优先选择标题包含关键词的文档
+            if keyword:
+                for item in raw_list:
+                    if keyword.lower() in item.get("name", "").lower():
+                        raw = crawler.fetch_doc(item["lib_id"], item["doc_id"])
+                        if raw:
+                            return raw.get("text", ""), raw.get("title", "")
+            # 没有关键词或没找到匹配的，返回第一篇
             raw = crawler.fetch_doc(raw_list[0]["lib_id"], raw_list[0]["doc_id"])
             return (raw or {}).get("text", ""), (raw or {}).get("title", "")
         return "", ""
