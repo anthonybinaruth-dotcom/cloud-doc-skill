@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cloud-doc-monitor"
-version = "0.3.0"
+version = "0.4.0"
 description = "智能文档助手 - 多云文档监控、对比与变更检测技能库"
 license = "MIT"
 keywords = ["aliyun", "tencent", "baidu", "volcano", "documentation", "monitor", "skills", "ai"]
