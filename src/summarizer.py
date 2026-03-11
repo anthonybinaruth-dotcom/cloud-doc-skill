@@ -28,9 +28,13 @@ class DashScopeAdapter(LLMAdapter):
         max_retries: int = 3,
     ):
         self.model = model
-        self.api_key = api_key
+        self.api_key = api_key.strip()
         self.api_base = api_base
         self.max_retries = max_retries
+        
+        if not self.api_key or self.api_key.startswith("Missing:"):
+            missing_var = self.api_key.replace("Missing:", "").strip() if self.api_key.startswith("Missing:") else "LLM_API_KEY"
+            raise ValueError(f"环境变量 {missing_var} 未设置。请设置后重试。")
 
     def generate(self, prompt: str, max_tokens: int = 1000) -> str:
         url = f"{self.api_base}/chat/completions"
@@ -76,11 +80,14 @@ class DashScopeVLAdapter(LLMAdapter):
         max_images: int = 5,
     ):
         self.model = model
-        self.api_key = api_key
+        self.api_key = api_key.strip()
         self.api_base = api_base
         self.max_retries = max_retries
         self.max_images = max_images
         self._image_cache: Dict[str, str] = {}
+        
+        if not self.api_key:
+            raise ValueError("LLM API Key 未配置。请设置环境变量 LLM_API_KEY")
 
     def generate(self, prompt: str, max_tokens: int = 1000) -> str:
         return self.generate_with_images(prompt, [], max_tokens)

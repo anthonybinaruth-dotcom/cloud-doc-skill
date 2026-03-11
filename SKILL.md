@@ -4,7 +4,8 @@ version: 0.4.0
 description: 智能文档助手技能库，支持抓取阿里云、腾讯云、百度云、火山引擎的产品文档，进行变更检测、跨云对比分析、AI 摘要生成和定时巡检推送。当用户提到抓取云厂商文档、检查文档更新、对比不同云的产品、生成变更报告或运行文档巡检时，应触发此 skill。
 author: anthonybinaruth-dotcom
 license: MIT
-repository: https://github.com/anthonybinaruth-dotcom/cloud-doc-skill
+repository: https://github.com/anthonybinaruth-dotcom/cloud-doc-skill/tree/master
+homepage: https://github.com/anthonybinaruth-dotcom/cloud-doc-skill
 keywords:
   - documentation
   - cloud
@@ -13,16 +14,10 @@ keywords:
   - tencent
   - baidu
   - volcano
+metadata: {"clawdbot":{"emoji":"📚","requires":{"bins":["python3"],"packages":["requests>=2.31.0","beautifulsoup4>=4.12.0","lxml>=4.9.0","sqlalchemy>=2.0.0","pyyaml>=6.0.0","click>=8.1.0"],"env":["LLM_API_KEY"]},"primaryEnv":"LLM_API_KEY"}}
 runtime:
   language: python
   version: ">=3.10"
-  dependencies:
-    - requests>=2.31.0
-    - beautifulsoup4>=4.12.0
-    - lxml>=4.9.0
-    - sqlalchemy>=2.0.0
-    - pyyaml>=6.0.0
-    - click>=8.1.0
 skills:
   - name: fetch_doc
     description: 抓取指定云厂商的产品文档

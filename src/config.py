@@ -54,7 +54,7 @@ class Config:
         "llm": {
             "provider": "dashscope",
             "model": "${LLM_MODEL:qwen-turbo}",
-            "api_key": "${DASHSCOPE_API_KEY}",
+            "api_key": "${LLM_API_KEY}",
             "api_base": "${LLM_API_BASE:https://dashscope.aliyuncs.com/compatible-mode/v1}",
             "max_tokens": 1000,
             "temperature": 0.3,
@@ -93,17 +93,31 @@ class Config:
             raise ConfigError(f"加载配置文件失败: {e}")
 
     def _replace_env_vars(self, obj: Any) -> Any:
+        """递归替换配置中的环境变量
+        
+        支持语法：
+        - ${VAR} - 使用环境变量 VAR，如果不存在则为空字符串
+        - ${VAR:default} - 使用环境变量 VAR，如果不存在则使用 default
+        - ${VAR1:${VAR2}} - 嵌套：优先使用 VAR1，如果不存在则使用 VAR2
+        """
         if isinstance(obj, dict):
             return {k: self._replace_env_vars(v) for k, v in obj.items()}
         elif isinstance(obj, list):
             return [self._replace_env_vars(item) for item in obj]
         elif isinstance(obj, str):
-            pattern = r'\$\{([^}:]+)(?::([^}]*))?\}'
-            def replacer(match):
-                var_name = match.group(1)
-                default_value = match.group(2) if match.group(2) is not None else ""
-                return os.environ.get(var_name, default_value)
-            return re.sub(pattern, replacer, obj)
+            # 支持嵌套环境变量替换，最多递归 3 次
+            result = obj
+            for _ in range(3):
+                pattern = r'\$\{([^}:]+)(?::([^}]*))?\}'
+                def replacer(match):
+                    var_name = match.group(1)
+                    default_value = match.group(2) if match.group(2) is not None else ""
+                    return os.environ.get(var_name, default_value)
+                new_result = re.sub(pattern, replacer, result)
+                if new_result == result:  # 没有更多替换
+                    break
+                result = new_result
+            return result
         return obj
 
     def validate(self) -> None:
