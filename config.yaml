@@ -1,0 +1,28 @@
+# 智能文档助手 - 配置文件
+# 支持 ${ENV_VAR} 和 ${ENV_VAR:default} 语法
+
+# 爬虫配置
+crawler:
+  request_delay: 1.0
+  max_retries: 3
+  timeout: 30
+
+# 大模型配置（环境变量优先）
+llm:
+  provider: "dashscope"
+  model: "${LLM_MODEL:qwen-turbo}"
+  api_key: "${LLM_API_KEY}"
+  api_base: "${LLM_API_BASE:https://dashscope.aliyuncs.com/compatible-mode/v1}"
+  max_tokens: 1000
+  temperature: 0.3
+
+# 存储配置
+storage:
+  type: "sqlite"
+  db_path: "./data/docs.db"
+  keep_versions: 10
+
+# 日志配置
+logging:
+  level: "INFO"
+  file: "./logs/monitor.log"

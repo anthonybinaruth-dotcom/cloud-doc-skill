@@ -24,7 +24,7 @@ class CheckChangesSkill:
         product: str,
         keyword: Optional[str] = None,
         days: int = 7,
-        max_pages: int = 20,
+        max_pages: int = 200,
         with_summary: bool = True,
     ) -> Dict[str, Any]:
         if not cloud:

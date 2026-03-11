@@ -5,7 +5,7 @@ import re
 import time
 import uuid
 from typing import Dict, List, Optional, Tuple
-from urllib.parse import urljoin
+from urllib.parse import urljoin, quote
 
 import requests
 from bs4 import BeautifulSoup
@@ -91,11 +91,13 @@ class BaiduDocCrawler:
                 "status": "ONLINE",
             }
             try:
+                # URL encode query_text to avoid HTTP header encoding errors with Chinese characters
+                encoded_query = quote(query_text, safe='')
                 resp = self.session.post(
                     BAIDU_SEARCH_API,
                     json=payload,
                     timeout=self.timeout,
-                    headers={"Referer": f"https://cloud.baidu.com/search/{query_text}/all-{page_no}"},
+                    headers={"Referer": f"https://cloud.baidu.com/search/{encoded_query}/all-{page_no}"},
                 )
                 resp.raise_for_status()
                 data = resp.json()
@@ -150,8 +152,29 @@ class BaiduDocCrawler:
         return docs
 
     def discover_product_docs(self, product: str, limit: int = 0) -> List[Dict[str, str]]:
+        """发现产品文档
+        
+        Args:
+            product: 产品名称或功能关键词（如 VPC、安全组）
+            limit: 返回文档数量限制，0 表示不限制
+            
+        Returns:
+            文档列表，每个文档包含 product、slug、title、url 等字段
+            
+        Note:
+            - 如果 product 是具体产品名（如 VPC），会过滤只返回该产品的文档
+            - 如果 product 是功能关键词（如 安全组），会返回所有相关产品的文档
+        """
         product_upper = product.upper()
-        return self.search_docs(query=product_upper, product=product_upper, limit=limit or 0)
+        # 尝试作为产品名搜索（过滤产品）
+        docs_filtered = self.search_docs(query=product_upper, product=product_upper, limit=limit or 0)
+        
+        # 如果没找到结果，可能是功能关键词而非产品名，尝试不过滤产品
+        if not docs_filtered:
+            logging.info(f"未找到产品 {product_upper} 的文档，尝试作为功能关键词搜索")
+            docs_filtered = self.search_docs(query=product, product="", limit=limit or 0)
+        
+        return docs_filtered
 
     def fetch_doc(self, product: str, slug: str) -> Optional[Dict]:
         self._rate_limit()

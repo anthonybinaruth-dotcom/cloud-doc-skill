@@ -40,10 +40,13 @@ class SkillRuntime:
         if self._config is None:
             self._config = get_config(self._config_path)
             # 用调用方传入的参数覆盖 config 中的 LLM 配置
-            llm_cfg = self._config.setdefault("llm", {})
+            llm_cfg = self._config.get("llm", {})
+            if not llm_cfg:
+                llm_cfg = {}
+                self._config.set("llm", llm_cfg)
             for key, value in self._llm_overrides.items():
                 if value:  # 只覆盖非空值
-                    llm_cfg[key] = value
+                    self._config.set(f"llm.{key}", value)
         return self._config
 
     @property

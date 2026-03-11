@@ -22,7 +22,7 @@ class FetchDocSkill:
         product: Optional[str] = None,
         doc_ref: Optional[str] = None,
         with_summary: bool = False,
-        max_pages: int = 20,
+        max_pages: int = 200,
         keyword: Optional[str] = None,
     ) -> Dict[str, Any]:
         # 参数校验
@@ -151,6 +151,7 @@ class FetchDocSkill:
             "title": doc.title,
             "url": doc.url,
             "doc_ref": doc.url,
+            "content": doc.content,
             "last_modified": doc.last_modified.isoformat() if doc.last_modified else None,
         }
         if with_summary:

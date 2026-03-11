@@ -29,6 +29,7 @@ _BROWSER_HEADERS = {
 
 ALIYUN_DOC_API = "https://help.aliyun.com/help/json/document_detail.json"
 ALIYUN_MENU_API = "https://help.aliyun.com/help/json/menupath.json"
+ALIYUN_PRODUCT_API = "https://help.aliyun.com/help/json/product.json"
 
 
 def url_to_alias(doc_url: str) -> str:
@@ -153,17 +154,67 @@ class DocumentCrawler:
             })
         return diagrams
 
-    def discover_product_docs(self, product_alias: str, strict: bool = False) -> List[str]:
+    def fetch_product_info(self, product_alias: str) -> Optional[dict]:
+        """获取产品信息（含子产品列表）"""
+        alias = self._normalize_alias(product_alias)
+        params = {"alias": alias, "website": "cn", "language": "zh"}
+        return self._fetch_api_data(ALIYUN_PRODUCT_API, params, api_name="产品信息 API")
+
+    def discover_sub_product_aliases(self, product_alias: str) -> List[str]:
+        """通过 product.json 发现子产品的 alias 列表"""
+        product_info = self.fetch_product_info(product_alias)
+        if product_info is None:
+            return []
+        sub_module = product_info.get("subModule") or {}
+        children = sub_module.get("children", [])
+        sub_aliases = []
+        for child in children:
+            url = child.get("url", "")
+            if url:
+                # URL 格式: https://help.aliyun.com/zh/vpn/sub-product-ipsec-vpn/
+                sub_alias = url_to_alias(url)
+                if sub_alias:
+                    sub_aliases.append(sub_alias)
+                    logging.info(f"发现子产品: {child.get('title', '')} -> {sub_alias}")
+        return sub_aliases
+
+    def discover_product_docs(self, product_alias: str, strict: bool = False,
+                               include_sub_products: bool = True) -> List[str]:
+        """发现产品下所有文档（含子产品）
+
+        Args:
+            product_alias: 产品别名，如 /vpn
+            strict: 失败时是否抛异常
+            include_sub_products: 是否递归发现子产品文档
+        """
+        all_aliases = []
+
+        # 1. 获取主产品文档
         menu_data = self.fetch_menu(product_alias)
         if menu_data is None:
             message = f"获取阿里云产品目录失败: {self._normalize_alias(product_alias)}"
             if strict:
                 raise RuntimeError(message)
             logging.error(message)
-            return []
-        aliases = self.extract_aliases_from_menu(menu_data)
-        logging.info(f"发现 {len(aliases)} 个文档 (产品: {menu_data.get('alias', product_alias)})")
-        return aliases
+        else:
+            aliases = self.extract_aliases_from_menu(menu_data)
+            logging.info(f"主产品发现 {len(aliases)} 个文档 (产品: {menu_data.get('alias', product_alias)})")
+            all_aliases.extend(aliases)
+
+        # 2. 发现并遍历子产品
+        if include_sub_products:
+            sub_aliases = self.discover_sub_product_aliases(product_alias)
+            for sub_alias in sub_aliases:
+                sub_menu = self.fetch_menu(sub_alias)
+                if sub_menu is None:
+                    logging.warning(f"获取子产品目录失败: {sub_alias}")
+                    continue
+                sub_docs = self.extract_aliases_from_menu(sub_menu)
+                logging.info(f"子产品 {sub_alias} 发现 {len(sub_docs)} 个文档")
+                all_aliases.extend(sub_docs)
+
+        logging.info(f"共发现 {len(all_aliases)} 个文档 (产品: {product_alias}，含子产品)")
+        return all_aliases
 
     def parse_api_response(self, data: dict, alias: str) -> Document:
         url = alias_to_url(alias)

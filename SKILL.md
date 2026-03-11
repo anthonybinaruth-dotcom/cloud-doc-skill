@@ -1,6 +1,120 @@
 ---
 name: cloud-doc-intelligent-assistant
+version: 0.3.0
 description: 智能文档助手技能库，支持抓取阿里云、腾讯云、百度云、火山引擎的产品文档，进行变更检测、跨云对比分析、AI 摘要生成和定时巡检推送。当用户提到抓取云厂商文档、检查文档更新、对比不同云的产品、生成变更报告或运行文档巡检时，应触发此 skill。
+author: anthonybinaruth-dotcom
+license: MIT
+repository: https://github.com/anthonybinaruth-dotcom/cloud-doc-skill
+keywords:
+  - documentation
+  - cloud
+  - monitoring
+  - aliyun
+  - tencent
+  - baidu
+  - volcano
+runtime:
+  language: python
+  version: ">=3.10"
+  dependencies:
+    - requests>=2.31.0
+    - beautifulsoup4>=4.12.0
+    - lxml>=4.9.0
+    - sqlalchemy>=2.0.0
+    - pyyaml>=6.0.0
+    - click>=8.1.0
+skills:
+  - name: fetch_doc
+    description: 抓取指定云厂商的产品文档
+    entry: scripts/entry.py
+    parameters:
+      cloud: 云厂商标识（aliyun/tencent/baidu/volcano）
+      product: 产品名称（可选）
+      doc_ref: 文档标识（可选）
+      with_summary: 是否生成 AI 摘要（默认 false）
+  - name: check_changes
+    description: 检测产品文档的变更
+    entry: scripts/entry.py
+    parameters:
+      cloud: 云厂商标识
+      product: 产品名称
+      days: 检查最近 N 天（默认 7）
+      with_summary: 是否生成变更摘要（默认 true）
+  - name: compare_docs
+    description: 跨云对比产品文档
+    entry: scripts/entry.py
+    parameters:
+      left: 左侧文档配置
+      right: 右侧文档配置
+      focus: 对比关注点（可选）
+  - name: summarize_diff
+    description: 对新旧版本文档进行 diff 和 AI 摘要
+    entry: scripts/entry.py
+    parameters:
+      title: 文档标题
+      old_content: 旧版本内容
+      new_content: 新版本内容
+      focus: 关注重点（可选）
+  - name: run_monitor
+    description: 批量巡检多云多产品文档
+    entry: scripts/entry.py
+    parameters:
+      clouds: 云厂商列表
+      products: 产品列表
+      mode: 巡检模式（check_now/scheduled）
+      send_notification: 是否发送通知（默认 false）
+permissions:
+  network:
+    outbound:
+      - https://help.aliyun.com/*
+      - https://cloud.tencent.com/*
+      - https://cloud.baidu.com/*
+      - https://www.volcengine.com/*
+      - ${LLM_API_BASE}/*
+      - ${AIFLOW_WEBHOOK_URL}
+      - ${RULIU_WEBHOOK_URL}
+    description: |
+      访问云厂商文档 API 和用户配置的 LLM API 端点。
+      文档内容会发送到 LLM API 进行摘要和对比分析。
+      变更通知会发送到用户配置的 webhook 地址。
+  filesystem:
+    read:
+      - config.yaml
+      - .env
+    write:
+      - data/*.db
+      - logs/*.log
+      - notifications/*.md
+    description: |
+      读取配置文件（config.yaml）和环境变量文件（.env，如果存在）。
+      写入 SQLite 数据库（data/）、日志文件（logs/）和通知文件（notifications/）。
+  environment:
+    read:
+      - LLM_API_KEY
+      - LLM_API_BASE
+      - LLM_MODEL
+      - DASHSCOPE_API_KEY
+      - AIFLOW_WEBHOOK_URL
+      - RULIU_WEBHOOK_URL
+    description: |
+      读取环境变量用于 LLM API 认证和 webhook 配置。
+      如果项目根目录存在 .env 文件，会自动加载其中的环境变量。
+security_notice: |
+  ⚠️ 隐私和安全提示：
+  
+  1. 数据传输：本 skill 会将抓取的云厂商文档内容发送到您配置的 LLM API（如通义千问、OpenAI、DeepSeek 等）进行 AI 摘要和对比分析。
+  
+  2. 通知推送：如果启用通知功能，变更摘要会发送到您配置的 webhook 地址（如飞书、如流、钉钉机器人）。
+  
+  3. 本地存储：文档内容和历史版本会存储在本地 SQLite 数据库（data/docs.db）中。
+  
+  4. 环境变量：会自动读取项目根目录的 .env 文件（如果存在）来加载环境变量。
+  
+  5. API Key 安全：请确保您的 LLM_API_KEY 和 webhook URL 安全，避免泄露。建议使用环境变量而非硬编码在配置文件中。
+  
+  6. 数据加密：所有网络传输均使用 HTTPS 加密，但请注意 LLM 服务商可能会记录您发送的文档内容。
+  
+  7. 审计建议：首次使用前，建议审查源码（src/）确认数据流向，特别是 src/summarizer.py 和 src/notifier.py。
 ---
 
 # 智能文档助手 Skill
@@ -232,6 +346,15 @@ cloud-doc-skill run_monitor '{"clouds": ["aliyun", "tencent"], "products": ["vpc
 - `machine`：结构化数据，供程序读取
 - `human`：人类可读的摘要文本
 - `error`：正常为 `null`，出错时包含 `code` 和 `message`
+
+## 权限说明
+
+本技能运行时需要以下权限：
+
+- 网络访问：需访问阿里云、腾讯云、百度云、火山引擎的文档 API 接口（HTTPS 出站）
+- 文件读写：本地 SQLite 数据库存储文档历史版本（`data/` 目录）、通知文件写入（`notifications/` 目录）、日志写入（`logs/` 目录）
+- 环境变量读取：读取 `LLM_API_KEY`、`LLM_API_BASE`、`LLM_MODEL` 用于 AI 功能
+- 无需 root/管理员权限，无后台常驻进程
 
 ## 配置说明
 
